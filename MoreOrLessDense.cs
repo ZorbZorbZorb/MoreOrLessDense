@@ -1,10 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using BepInEx;
+using HarmonyLib;
+using MoreOrLessDense.Dtos;
+using MoreOrLessDense.Helpers;
+using System;
+using System.IO;
+using System.Reflection;
+using System.Security;
+using System.Security.Permissions;
+using UnityEngine;
+using UnityEngine.UI;
 
-namespace MoreOrLessDense
-{
+[module: UnverifiableCode]
+[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
+
+namespace MoreOrLessDense {
     [BepInPlugin("org.bepinex.plugins.moreorlessdense", "More or less dense", "1.0.0.0")]
     [BepInProcess("DSPGAME.exe")]
     public class MoreOrLessDense : BaseUnityPlugin {
@@ -12,9 +21,9 @@ namespace MoreOrLessDense
         void Start() {
             Harmony.CreateAndPatchAll(typeof(MoreOrLessDense));
         }
-
-        private static readonly int desiredMinStars = 10;
-        private static readonly int desiredMaxStars = 200;
+        
+        private static readonly string configFolder = @"./BepInEx/config/MoreOrLessDense/";
+        private static DensityDTO densityDto = null;
 
         private static Slider starDensitySlider = null;
         private static Text starDensityText = null;
@@ -29,13 +38,11 @@ namespace MoreOrLessDense
             Slider starCountSlider = (Slider)ReflectionHelper.GetField(__instance, "starCountSlider", flags);
             Text starCountText = (Text)ReflectionHelper.GetField(__instance, "starCountText", flags);
 
-            starCountSlider.minValue = desiredMinStars;
-            starCountSlider.maxValue = desiredMaxStars;
-
             if ( uiGalaxySelect == null ) {
                 uiGalaxySelect = __instance;
             }
 
+            // Create a new slider for star density
             if ( starDensitySlider == null ) {
                 starDensitySlider = Instantiate(starCountSlider, starCountSlider.transform, starCountSlider.transform.parent);
                 Vector3 newPosition = starDensitySlider.transform.position;
@@ -59,6 +66,7 @@ namespace MoreOrLessDense
                 });
             }
 
+            // Create a text to go along with the slider
             if ( starDensityText == null ) {
                 starDensityText = Instantiate(starCountText, starCountText.transform);
                 // normally id just move this down a little bit, but moving it in the y axis causes it to vanish. not sure why.
@@ -74,15 +82,19 @@ namespace MoreOrLessDense
                 starDensityText.transform.localScale = newScale;
                 starDensityText.text = "Density";
             }
+
         }
 
         public static void OnValueChanged() {
             // Update text
             //starDensitySlider.
+
             // Regenerate galaxy
             uiGalaxySelect.SetStarmapGalaxy();
+            SetDensityInformation(starDensitySlider.value);
         }
-
+        
+        // Teardown
         [HarmonyPostfix, HarmonyPatch(typeof(UIGalaxySelect), "_OnDestroy")]
         public static void Patch() {
             if ( starDensitySlider != null ) {
@@ -93,47 +105,76 @@ namespace MoreOrLessDense
             if ( starDensityText != null ) {
                 starDensityText = null;
             }
+            densityDto = null;
         }
 
+        // Update density information
+        public static void SetDensityInformation(float sliderValue) {
+            if (densityDto == null) {
+                densityDto = new DensityDTO();
+            }
+
+            // Actual slider range is 0.25 to 2.5x
+            double value = starDensitySlider == null ? 1d : starDensitySlider.value * 0.25;
+
+            // Thank god for desmos.com/calculator
+            densityDto.minDist = Math.Round(Math.Log(value + 2.05d, 2d), 1);
+            densityDto.minStepLen = Math.Round(Math.Log(value + 2.05d, 2d), 1);
+            densityDto.maxStepLen = Math.Round(Math.Exp(( value / 2d ) + 0.4d), 1);
+        }
+        
+        // Change the star density
         [HarmonyPrefix, HarmonyPatch(typeof(UniverseGen), "GenerateTempPoses")]
         public static void Patch(ref int seed, ref int targetCount, ref int iterCount, ref double minDist, ref double minStepLen, ref double maxStepLen, ref double flatten) {
-            double value;
-            if ( starDensitySlider == null ) {
-                value = 1d;
+            if (densityDto != null) {
+                minDist = densityDto.minDist;
+                minStepLen = densityDto.minStepLen;
+                maxStepLen = densityDto.maxStepLen;
             }
-            else {
-                value = starDensitySlider.value * 0.25;  // Actual range is 0.25 to 2.5x
-            }
-            // Thank god for algebra and desmos.com/calculator
-            minDist = Math.Round(Math.Log(value + 2.05d, 2d), 1);
-            minStepLen = Math.Round(Math.Log(value + 2.05d, 2d), 1);
-            maxStepLen = Math.Round(Math.Exp(( value / 2d ) + 0.4d), 1);
-            Debug.Log($"moreorlessstars -- value:{value} minDist:{minDist} minStepLen:{minStepLen} maxStepLen:{maxStepLen}");
         }
-
-        // Remove the hard-coded star limits
-        [HarmonyPrefix, HarmonyPatch(typeof(UIGalaxySelect), "OnStarCountSliderValueChange")]
-        public static bool Patch(ref UIGalaxySelect __instance, ref float val) {
-            // Gather required private fields
-            BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
-            Slider starCountSlider = (Slider)ReflectionHelper.GetField(__instance, "starCountSlider", flags);
-            GameDesc gameDesc = (GameDesc)ReflectionHelper.GetField(__instance, "gameDesc", flags);
-
-            // Replicate the code of the original method
-            int num = (int)( starCountSlider.value + 0.1f );
-            if ( num < desiredMinStars ) {
-                num = desiredMinStars;
+        // Save density information
+        public static void SaveDensityInfo(string saveName, DensityDTO densityInformation) {
+            string path = $"{configFolder}\\{saveName}.txt";
+            Debug.Log($"More or Less Dense -- Saving {saveName} at {path}");
+            if ( !Directory.Exists(configFolder) ) {
+                Directory.CreateDirectory(configFolder);
             }
-            else if ( num > desiredMaxStars ) {
-                num = desiredMaxStars;
+            File.WriteAllText(path, densityInformation.ToString());
+        }
+        // Load density information
+        public static DensityDTO LoadDensityInfo(string saveName) {
+            if ( !Directory.Exists(configFolder) ) {
+                Directory.CreateDirectory(configFolder);
             }
-            if ( num != gameDesc.starCount ) {
-                gameDesc.starCount = num;
-                __instance.SetStarmapGalaxy();
+            string path = $"{configFolder}\\{saveName}.txt";
+            Debug.Log($"More or Less Dense -- Loading save {saveName} at {path}");
+            if (!File.Exists(path) ) {
+                return null;
             }
-
-            // Return to prevent the call of the original method
-            return false;
+            return DensityDTO.FromString(File.ReadAllText(path));
+        }
+        // Hook game save
+        [HarmonyPrefix, HarmonyPatch(typeof(GameSave), "SaveCurrentGame")]
+        public static void Patch (string saveName) {
+            if (densityDto != null) {
+                try {
+                    SaveDensityInfo(saveName, densityDto);
+                }
+                catch (Exception e) {
+                    Debug.LogError(e.Message);
+                }
+            }
+        }
+        // Hook game load
+        [HarmonyPrefix, HarmonyPatch(typeof(GameSave), "LoadCurrentGame")]
+        public static void Prefix(string saveName) {
+            try {
+                densityDto = LoadDensityInfo(saveName);
+            }
+            catch (Exception e) {
+                Debug.LogError(e.Message);
+                densityDto = null;
+            }
         }
     }
 }
