@@ -4,7 +4,6 @@ using MoreOrLessDense.Dtos;
 using MoreOrLessDense.Helpers;
 using System;
 using System.IO;
-using System.Reflection;
 using System.Security;
 using System.Security.Permissions;
 using UnityEngine;
@@ -27,6 +26,7 @@ namespace MoreOrLessDense {
         private static DensityDTO densityDto = null;
 
         private static Slider starDensitySlider = null;
+        private static Text starDensitySliderText = null;
         private static Text starDensityText = null;
         private static UIGalaxySelect uiGalaxySelect = null;
 
@@ -34,28 +34,23 @@ namespace MoreOrLessDense {
         [HarmonyPrefix, HarmonyPatch(typeof(UIGalaxySelect), "UpdateUIDisplay")]
         public static void Patch(ref UIGalaxySelect __instance, GalaxyData galaxy) {
 
-            BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
-
-            Slider starCountSlider = (Slider)ReflectionHelper.GetField(__instance, "starCountSlider", flags);
-            Text starCountText = (Text)ReflectionHelper.GetField(__instance, "starCountText", flags);
-
             if ( uiGalaxySelect == null ) {
                 uiGalaxySelect = __instance;
             }
 
             // Create a new slider for star density
             if ( starDensitySlider == null ) {
-                starDensitySlider = Instantiate(starCountSlider, starCountSlider.transform, starCountSlider.transform.parent);
+                starDensitySlider = Instantiate(__instance.starCountSlider, __instance.starCountSlider.transform);
+                
                 Vector3 newPosition = starDensitySlider.transform.position;
-                //Debug.Log($"slider is at ({newPosition.x}, {newPosition.y}, {newPosition.z})");
-                newPosition.x *= 1f;
-                newPosition.y *= 1f;
-                newPosition.z *= 1.25f;
+                Debug.Log($"slider is at ({newPosition.x}, {newPosition.y}, {newPosition.z})");
+                newPosition.x -= 1f;
+                newPosition.z += 5f;
                 Vector3 newScale = starDensitySlider.transform.localScale;
-                newScale.x *= 1.25f;
-                newScale.y *= 1.25f;
-                newScale.z *= 1.25f;
-                //Debug.Log($"slider is now at ({newPosition.x}, {newPosition.y}, {newPosition.z})");
+                Debug.Log($"slider is now at ({newPosition.x}, {newPosition.y}, {newPosition.z})");
+                //newScale.x *= 1.25f;
+                //newScale.y *= 1.25f;
+                //newScale.z *= 1.25f;
                 starDensitySlider.transform.position = newPosition;
                 starDensitySlider.transform.localScale = newScale;
                 starDensitySlider.minValue = 1f;
@@ -65,30 +60,48 @@ namespace MoreOrLessDense {
                 starDensitySlider.onValueChanged.AddListener(delegate {
                     OnValueChanged();
                 });
+                starDensitySliderText = Instantiate(__instance.starCountText, starDensitySlider.transform);
+                starDensitySliderText.text = "1x";
+
+                void printChildren(Transform t, int? indent = null) {
+                    if (indent == null) {
+                        indent = 0;
+                    }
+                    Debug.Log($"{indent - 1}: {new string('\t', (int)indent)}{t.name} - {t.GetType()}");
+                    for ( int i = 0; i < t.childCount; i++ ) {
+                        printChildren(t.GetChild(i), indent++);
+                    }
+                }
             }
 
             // Create a text to go along with the slider
             if ( starDensityText == null ) {
-                starDensityText = Instantiate(starCountText, starCountText.transform);
+                starDensityText = Instantiate(__instance.starCountText, starDensitySlider.transform);
                 // normally id just move this down a little bit, but moving it in the y axis causes it to vanish. not sure why.
                 Vector3 newPosition = starDensityText.transform.position;
                 Vector3 newScale = starDensityText.transform.localScale;
-                newPosition.x -= 1.75f;
-                newPosition.y -= 1f;
-                newPosition.z -= 1f;
-                newScale.x *= 1.5f;
-                newScale.y *= 1.5f;
-                newScale.z *= 1.5f;
+                newPosition.x -= 2.5f;
+                //newPosition.y += 1f;
+                //newPosition.z -= 1.5f;
+                newScale.x *= 1.6f;
+                newScale.y *= 1.6f;
+                newScale.z *= 1.6f;
                 starDensityText.transform.position = newPosition;
                 starDensityText.transform.localScale = newScale;
-                starDensityText.text = "Density";
+                starDensityText.text = "Star Density";
+                
             }
 
         }
 
         public static void OnValueChanged() {
+            if (!starDensitySlider || !starDensitySliderText) {
+                Debug.LogError("missing slider or text for star density info");
+                return;
+            }
+            
             // Update text
-            //starDensitySlider.
+            starDensitySliderText.text = Math.Round(starDensitySlider.value * 0.25f, 2).ToString() + "x";
 
             // Regenerate galaxy
             uiGalaxySelect.SetStarmapGalaxy();
@@ -107,6 +120,7 @@ namespace MoreOrLessDense {
                 starDensityText = null;
             }
             densityDto = null;
+            starDensitySliderText = null;
         }
 
         // Update density information
