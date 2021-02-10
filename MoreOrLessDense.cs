@@ -14,7 +14,8 @@ using UnityEngine.UI;
 [assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
 
 namespace MoreOrLessDense {
-    [BepInPlugin("org.bepinex.plugins.moreorlessdense", "More or less dense", "1.0.0.0")]
+    [BepInPlugin("org.bepinex.plugins.moreorlessdense", "More or less dense", "1.0.0")]
+    [BepInIncompatibility("Denseiverse")]
     [BepInProcess("DSPGAME.exe")]
     public class MoreOrLessDense : BaseUnityPlugin {
         // Apply all patches
