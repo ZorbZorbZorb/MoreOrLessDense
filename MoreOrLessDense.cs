@@ -22,7 +22,7 @@ namespace MoreOrLessDense {
             Harmony.CreateAndPatchAll(typeof(MoreOrLessDense));
         }
         
-        private static readonly string configFolder = @"./BepInEx/config/MoreOrLessDense/";
+        private static readonly string configFolder = @"./BepInEx/config/MoreOrLessDense";
         private static DensityDTO densityDto = null;
 
         private static Slider starDensitySlider = null;
@@ -31,16 +31,16 @@ namespace MoreOrLessDense {
         private static UIGalaxySelect uiGalaxySelect = null;
         private static float sliderDefaultValue = 4f;
 
-        private static bool errored = false;
+        private static bool shitsFuckedYo = false;
 
         public static void OnDensityChanged() {
-            if (errored) {
+            if (shitsFuckedYo) {
                 return;
             }
 
             if (!starDensitySlider || !starDensitySliderText) {
-                Debug.LogError("missing slider or text for star density info");
-                errored = true;
+                Debug.LogError($"More or Less Dense::OnDensityChanged() -- FATAL ERROR: missing slider or text for star density info");
+                shitsFuckedYo = true;
                 return;
             }
             
@@ -55,17 +55,18 @@ namespace MoreOrLessDense {
         // Buildup
         [HarmonyPostfix, HarmonyPatch(typeof(UIGalaxySelect), "_OnOpen")]
         public static void Patch(ref UIGalaxySelect __instance) {
-            if (errored) {
-                Debug.LogError("More or Less Dense -- refused to start because plugin had errored.");
+            if (shitsFuckedYo) {
+                Debug.LogError("More or Less Dense::_OnOpen() -- refused to start because plugin had errored.");
                 return;
             }
             CreateDensitySlider(__instance);
             SetDensityInformation(starDensitySlider.value);
             OnDensityChanged();
-            Debug.LogError("Started modifying star density");
+            Debug.Log("Started modifying star density");
         }
 
         private static void CreateDensitySlider(UIGalaxySelect __instance) {
+            TeardownDensitySlider();
             Debug.Log("creating star density slider");
 
             if ( uiGalaxySelect == null ) {
@@ -120,22 +121,32 @@ namespace MoreOrLessDense {
         // Teardown
         [HarmonyPrefix, HarmonyPatch(typeof(UIGalaxySelect), "_OnClose")]
         public static void Patch() {
-            Debug.Log("stopped modifying star density");
+            TeardownDensitySlider();
+        }
+        private static void TeardownDensitySlider() {
+            Debug.Log("Toredown slider");
+            Vector3 astupidplace = new Vector3(100000f, 100000f, 100000f);
             if ( starDensitySlider != null ) {
+                starDensitySlider.transform.position = astupidplace;
                 starDensitySlider.onValueChanged.RemoveAllListeners();
-                starDensitySlider.transform.position.Set(1000, 1000, 1000);
+                Destroy(starDensitySlider);
                 starDensitySlider = null;
             }
             if ( starDensityText != null ) {
+                starDensityText.transform.position = astupidplace;
+                Destroy(starDensityText);
                 starDensityText = null;
             }
-            densityDto = null;
-            starDensitySliderText = null;
+            if (starDensitySliderText != null) {
+                starDensitySliderText.transform.position = astupidplace;
+                Destroy(starDensitySliderText);
+                starDensitySliderText = null;
+            }
         }
 
         // Update density information
         public static void SetDensityInformation(float sliderValue) {
-            if (errored) {
+            if (shitsFuckedYo) {
                 return;
             }
 
@@ -156,7 +167,7 @@ namespace MoreOrLessDense {
         // Change the star density
         [HarmonyPrefix, HarmonyPatch(typeof(UniverseGen), "GenerateTempPoses")]
         public static void Patch(ref int seed, ref int targetCount, ref int iterCount, ref double minDist, ref double minStepLen, ref double maxStepLen, ref double flatten) {
-            if (densityDto != null && !errored) {
+            if (densityDto != null && !shitsFuckedYo) {
                 minDist = densityDto.minDist;
                 minStepLen = densityDto.minStepLen;
                 maxStepLen = densityDto.maxStepLen;
@@ -166,7 +177,7 @@ namespace MoreOrLessDense {
         
         // Save density information
         public static void SaveDensityInfo(string saveName, DensityDTO densityInformation) {
-            string path = $"{configFolder}\\{saveName}.txt";
+            string path = $"{configFolder}/{saveName}.txt";
             Debug.Log($"More or Less Dense -- Saving {saveName} at {path}");
             if ( !Directory.Exists(configFolder) ) {
                 Directory.CreateDirectory(configFolder);
@@ -174,42 +185,63 @@ namespace MoreOrLessDense {
             File.WriteAllText(path, densityInformation.ToString());
         }
         // Load density information
-        public static DensityDTO LoadDensityInfo(string saveName) {
+        public static bool LoadDensityInfo(string saveName, out DensityDTO density) {
+            density = null;
             if ( !Directory.Exists(configFolder) ) {
                 Directory.CreateDirectory(configFolder);
             }
-            string path = $"{configFolder}\\{saveName}.txt";
+            string path = $"{configFolder}/{saveName}.txt";
             Debug.Log($"More or Less Dense -- Loading save {saveName} at {path}");
-            if (!File.Exists(path) ) {
-                Debug.Log($"More or Less Dense -- No save file found");
-                return null;
+            try {
+                if (!File.Exists(path) ) {
+                    Debug.Log($"More or Less Dense -- No save file found");
+                    return false;
+                }
+                density = DensityDTO.FromString(File.ReadAllText(path));
+                return true;
             }
-            return DensityDTO.FromString(File.ReadAllText(path));
+            catch (Exception e) {
+                Debug.LogWarning($"More or Less Dense -- possible bad path for save file at '{path}'");
+                return false;
+            }
         }
         // Hook game save
         [HarmonyPrefix, HarmonyPatch(typeof(GameSave), "SaveCurrentGame")]
         public static void Patch (string saveName) {
-            if (densityDto != null && !errored) {
+            if (densityDto == null) {
+                Debug.Log($"More or Less Dense::SaveCurrentGame() -- No information to save");
+            }
+            if (densityDto != null && !shitsFuckedYo) {
                 try {
                     SaveDensityInfo(saveName, densityDto);
+                    Debug.Log($"Saved density information: {densityDto.minDist};{densityDto.minStepLen};{densityDto.maxStepLen}");
                 }
                 catch (Exception e) {
-                    Debug.LogError(e.Message);
-                    errored = true;
+                    Debug.LogError($"More or Less Dense::SaveCurrentGame() -- FATAL ERROR: {e.Message}");
+                    shitsFuckedYo = true;
                 }
             }
         }
         // Hook game load
         [HarmonyPrefix, HarmonyPatch(typeof(GameSave), "LoadCurrentGame")]
         public static void Prefix(string saveName) {
-            if (!errored) {
+            if ( string.IsNullOrEmpty(saveName) ) {
+                Debug.LogError("More or Less Dense::LoadCurrentGame() -- Can't load nameless save. Is this the main menu?");
+            }
+            if (!shitsFuckedYo ) {
                 try {
-                    densityDto = LoadDensityInfo(saveName);
+                    if ( LoadDensityInfo(saveName, out DensityDTO density) ) {
+                        densityDto = density;
+                        Debug.Log($"Loaded density information: {densityDto.minDist};{densityDto.minStepLen};{densityDto.maxStepLen}");
+                    }
+                    else {
+                        densityDto = null;
+                    }
                 }
                 catch (Exception e) {
-                    Debug.LogError(e.Message);
+                    Debug.LogError($"More or Less Dense::LoadCurrentGame() -- FATAL ERROR: {e.Message}");
                     densityDto = null;
-                    errored = true;
+                    shitsFuckedYo = true;
                 }
             }
         }
