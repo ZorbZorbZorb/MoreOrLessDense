@@ -64,7 +64,13 @@
     <Compile Include="Dtos\DensityDTO.cs" />
     <Compile Include="Helpers\ReflectionHelper.cs" />
     <Compile Include="MoreOrLessDense.cs" />
+    <Compile Include="Patches\PatchGameSave.cs" />
+    <Compile Include="Patches\PatchUIGalaxySelect.cs" />
+    <Compile Include="Patches\PatchUniverseGen.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>copy /y "C:\Users\Computer\source\dsp_modding\repos\MoreOrLessDense\bin\Debug\MoreOrLessDense.dll" "C:\Program Files (x86)\Steam\steamapps\common\Dyson Sphere Program\BepInEx\plugins\MoreOrLessDense.dll"</PostBuildEvent>
+  </PropertyGroup>
 </Project>
